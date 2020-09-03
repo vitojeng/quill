@@ -2,7 +2,7 @@ package io.getquill.context.sql.norm
 
 import io.getquill.ast._
 import io.getquill.context.sql._
-import io.getquill.sql.norm.{ SelectPropertyProtractor, StatelessQueryTransformer }
+import io.getquill.sql.norm.{InContext, SelectPropertyProtractor, StatelessQueryTransformer}
 import io.getquill.ast.PropertyOrCore
 import io.getquill.norm.PropertyMatroshka
 
@@ -69,6 +69,7 @@ object ExpandNestedQueries extends StatelessQueryTransformer {
   protected override def expandNested(q: FlattenSqlQuery, isTopLevel: Boolean): FlattenSqlQuery =
     q match {
       case FlattenSqlQuery(from, where, groupBy, orderBy, limit, offset, select, distinct) =>
+        val inContext = InContext(from)
         val newFroms = q.from.map(expandContext(_))
 
         def distinctIfNotTopLevel(values: List[SelectValue]) =
@@ -77,19 +78,10 @@ object ExpandNestedQueries extends StatelessQueryTransformer {
           else
             values.distinct
 
-        def refersToEntity(ast: Ast) = {
-          val tables = newFroms.collect { case TableContext(entity, alias) => alias }
-          ast match {
-            case Ident(v, _)                       => tables.contains(v)
-            case PropertyMatroshka(Ident(v, _), _) => tables.contains(v)
-            case _                                 => false
-          }
-        }
-
         def flattenNestedProperty(p: Ast): Ast = {
           p match {
             case p @ PropertyMatroshka(inner, path) =>
-              val isSubselect = !refersToEntity(p)
+              val isSubselect = !inContext.refersToEntity(p)
               val renameable =
                 if (p.prevName.isDefined || isSubselect)
                   Renameable.Fixed
